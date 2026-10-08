@@ -283,7 +283,8 @@ class Classifier(nn.Module):
 
 # ---------------------------------------------------------------- optimizer groups
 def param_groups(model, lr, weight_decay, layer_decay=None):
-    """AdamW groups; no weight decay on 1-D params, tokens, pos_embed, rel-pos tables.
+    """AdamW groups; no weight decay on 1-D params, tokens, pos_embed. Rel-pos tables (2-D) ARE decayed, as in
+    PanDerm's run_class_finetuning.py (get_parameter_groups: skip list = model.no_weight_decay() = pos_embed, cls_token).
     With layer_decay, block i gets lr * decay**(depth + 1 - (i + 1)); embeddings layer 0; head/norms depth+1."""
     depth = len(model.backbone.blocks)
     groups = {}
@@ -291,7 +292,7 @@ def param_groups(model, lr, weight_decay, layer_decay=None):
         if not p.requires_grad:
             continue
         no_wd = p.ndim == 1 or any(s in n for s in ["cls_token", "pos_embed", "mask_token", "register_tokens",
-                                                       "relative_position_bias_table", "q_bias", "v_bias"])
+                                                       "q_bias", "v_bias"])
         m = re.search(r"blocks\.(\d+)\.", n)
         if m:
             layer = int(m.group(1)) + 1
