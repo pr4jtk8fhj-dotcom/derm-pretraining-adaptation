@@ -14,6 +14,8 @@ from common import PRICE_PER_HOUR, PROJECT_DIR  # noqa: E402
 
 PROGRESS = os.path.join(PROJECT_DIR, "PROGRESS.md")
 START = os.path.join(PROJECT_DIR, ".pod_start_utc")
+# Closed earlier pods (replaced pods), one per line: "<start ISO> <end ISO> <note>"; their hours are added.
+SEGMENTS = os.path.join(PROJECT_DIR, ".pod_segments")
 BUDGET_CAP, BUDGET_TARGET = 100.0, 90.0
 # Cost assumes the pod price did not change since start (N_GPUS / GPU_PRICE env vars); if the pod is
 # replaced (e.g. 1 -> 2 GPUs), log it in PROGRESS.md and compute the real cost from RunPod billing.
@@ -27,6 +29,12 @@ def elapsed():
     with open(START) as f:
         t0 = datetime.datetime.fromisoformat(f.read().strip())
     h = (now() - t0).total_seconds() / 3600
+    if os.path.exists(SEGMENTS):
+        with open(SEGMENTS) as f:
+            for ln in f:
+                if ln.strip():
+                    a, b = ln.split()[:2]
+                    h += (datetime.datetime.fromisoformat(b) - datetime.datetime.fromisoformat(a)).total_seconds() / 3600
     return t0, h, h * PRICE_PER_HOUR
 
 
@@ -44,7 +52,7 @@ def main():
         print(f"Start recorded: {t0}")
         return
     t0, h, cost = elapsed()
-    line = f"{h:.2f} h trascorse, costo stimato {cost:.2f} $ (tetto {BUDGET_CAP} $, obiettivo {BUDGET_TARGET} $)"
+    line = f"{h:.2f} h di pod (tutti i pod), costo stimato {cost:.2f} $ (tetto {BUDGET_CAP} $, obiettivo {BUDGET_TARGET} $)"
     if cmd == "status":
         print(line)
         return
