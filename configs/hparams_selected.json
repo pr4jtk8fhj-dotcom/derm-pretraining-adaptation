@@ -1,0 +1,96 @@
+{
+  "_note": "Fixed BEFORE any training, identical for both backbones. Only 'lr' is tuned, by lr_sweep.sh (same grid size for every method, val only); select_lr.py writes configs/hparams_selected.json with 'selected_lr'. epochs_by_frac is the same for all methods (equal compute within a fraction); revisit only before the matrix, from the measured benchmark, and log it in PROGRESS.md. Values are my choices, not taken from PanDerm: compare with run_class_finetuning.py before freezing.",
+  "common": {
+    "epochs_by_frac": {
+      "0.1": 30,
+      "0.3": 20,
+      "1.0": 10
+    },
+    "batch": 128,
+    "weighted_sampler": true,
+    "optimizer": "adamw",
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "weight_decay": 0.05,
+    "warmup_epochs": 1,
+    "min_lr": 1e-06,
+    "drop_path": 0.1,
+    "label_smoothing": 0.0,
+    "amp": "bf16",
+    "target_sensitivity": 0.95,
+    "val_criterion_auroc": 0.85
+  },
+  "lr_grid_extension": {
+    "_note": "Added 2026-10-08 after the first sweep: every arm's best LR was at the edge of its 3-value grid; user decision: extend each arm by ONE step past that edge (4 values per arm), same val-only rule; if the new value wins again at the edge, keep it and report it as a limitation.",
+    "panderm_lora": [
+      0.0001
+    ],
+    "dinov2_lora": [
+      0.0001
+    ],
+    "panderm_full": [
+      0.001
+    ],
+    "dinov2_full": [
+      5e-05
+    ]
+  },
+  "full": {
+    "lr": 0.0002,
+    "layer_decay": 0.75,
+    "lr_grid": [
+      0.0001,
+      0.0002,
+      0.0005
+    ]
+  },
+  "lora": {
+    "lr": 0.001,
+    "layer_decay": null,
+    "alpha_over_rank": 2.0,
+    "targets": [
+      "qkv",
+      "proj"
+    ],
+    "lr_grid": [
+      0.0003,
+      0.001,
+      0.003
+    ]
+  },
+  "selected_lr": {
+    "panderm_lora": 0.0003,
+    "panderm_full": 0.001,
+    "dinov2_lora": 0.0003,
+    "dinov2_full": 5e-05
+  },
+  "sweep_val_auroc": {
+    "dinov2_full": {
+      "0.0001": 0.8753885130434123,
+      "0.0002": 0.8741085704997003,
+      "0.0005": 0.8713126838993364,
+      "5e-05": 0.8780983796618402
+    },
+    "dinov2_lora": {
+      "0.0001": 0.8697211561085573,
+      "0.0003": 0.8732678200512578,
+      "0.001": 0.8697014695501916,
+      "0.003": 0.5915194892184072
+    },
+    "panderm_full": {
+      "0.0001": 0.8598361319344123,
+      "0.0002": 0.8650448474030821,
+      "0.0005": 0.8759536516747333,
+      "0.001": 0.880430090422181
+    },
+    "panderm_lora": {
+      "0.0001": 0.8782707358756455,
+      "0.0003": 0.8803674729353307,
+      "0.001": 0.8790917207032386,
+      "0.003": 0.8544894524322151
+    }
+  },
+  "_source_config_sha256": "bb1448d46e0e2abb7c15b4a0087ef17993149cdb13b3681cafffd56ec934b5be"
+}
