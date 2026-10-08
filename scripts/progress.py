@@ -18,8 +18,8 @@ START = os.path.join(PROJECT_DIR, ".pod_start_utc")
 SEGMENTS = os.path.join(PROJECT_DIR, ".pod_segments")
 # Current pod price in $/h (e.g. 6.98 for 2 x H100); overrides PRICE_PER_HOUR from common.py when present.
 PRICE_FILE = os.path.join(PROJECT_DIR, ".pod_price")
-WARN_AT = (70.0, 80.0, 90.0)  # estimated spend thresholds that trigger a warning (tell the user)
-BUDGET_CAP, BUDGET_TARGET = 100.0, 90.0
+WARN_AT = (70.0, 80.0, 85.0)  # estimated spend thresholds that trigger a warning (tell the user)
+BUDGET_CAP, BUDGET_TARGET = 90.0, 80.0  # user, 8/10: total cap 90 $ incl. failed pod
 # Cost assumes the pod price did not change since start (N_GPUS / GPU_PRICE env vars); if the pod is
 # replaced (e.g. 1 -> 2 GPUs), log it in PROGRESS.md and compute the real cost from RunPod billing.
 
