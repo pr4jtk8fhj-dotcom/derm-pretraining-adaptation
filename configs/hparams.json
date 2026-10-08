@@ -1,0 +1,21 @@
+{
+  "_note": "Fixed BEFORE any training, identical for both backbones. Only 'lr' is tuned, by lr_sweep.sh (same grid size for every method, val only); select_lr.py writes configs/hparams_selected.json with 'selected_lr'. epochs_by_frac is the same for all methods (equal compute within a fraction); revisit only before the matrix, from the measured benchmark, and log it in PROGRESS.md. Values are my choices, not taken from PanDerm: compare with run_class_finetuning.py before freezing.",
+  "common": {
+    "epochs_by_frac": {"0.1": 30, "0.3": 20, "1.0": 10},
+    "batch": 128,
+    "weighted_sampler": true,
+    "optimizer": "adamw",
+    "betas": [0.9, 0.999],
+    "weight_decay": 0.05,
+    "warmup_epochs": 1,
+    "min_lr": 1e-6,
+    "drop_path": 0.1,
+    "label_smoothing": 0.0,
+    "amp": "bf16",
+    "target_sensitivity": 0.95,
+    "val_criterion_auroc": 0.85
+  },
+  "full": {"lr": 2e-4, "layer_decay": 0.75, "lr_grid": [1e-4, 2e-4, 5e-4]},
+  "lora": {"lr": 1e-3, "layer_decay": null, "alpha_over_rank": 2.0, "targets": ["qkv", "proj"],
+           "lr_grid": [3e-4, 1e-3, 3e-3]}
+}

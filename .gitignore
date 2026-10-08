@@ -1,0 +1,24 @@
+# Data, weights and run outputs never go into the repository
+data/
+runs/
+results/
+logs/
+*.pth
+*.pt
+*.npz
+*.safetensors
+*.nsys-rep
+.pod_start_utc
+PROGRESS.md
+
+# Personal / application documents (not code)
+archivio/
+proposta/
+GUIDA.md
+*.pdf
+*.xlsx
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
