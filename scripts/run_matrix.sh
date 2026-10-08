@@ -18,6 +18,8 @@ METHODS=${METHODS:-"lora full"}
 # Primary-contrast reference first (3 seeds):  BBS=dinov2 METHODS=full bash scripts/run_matrix.sh "2 3" "1.0"
 cd "$(dirname "$0")/.."
 [ -f configs/hparams_selected.json ] || { echo "run lr_sweep.sh + select_lr.py first"; exit 1; }
+# Hold: while logs/MATRIX_HOLD exists (e.g. user reviewing the selected LRs) wait before starting any run.
+while [ -f logs/MATRIX_HOLD ]; do echo "== $(date -u +%FT%TZ) MATRIX_HOLD present: waiting"; sleep 60; done
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$SHARD}
 
 declare -A FAILS
