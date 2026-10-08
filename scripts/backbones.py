@@ -203,8 +203,15 @@ def build_panderm(repo, ckpt, drop_path=0.0, img_size=224,
 # ---------------------------------------------------------------- DINOv2
 def build_dinov2(drop_path=0.0, name="dinov2_vitl14"):
     """CLS token after the final norm; torch.hub code + weights (Apache 2.0).
-    Any input size that is a multiple of 14 works: DINOv2 interpolates its position embeddings at run time."""
+    Any input size that is a multiple of 14 works: DINOv2 interpolates its position embeddings at run time.
+    xFormers is disabled for supervised use: attention then runs through torch SDPA (fused kernels on GPU, and the
+    same code path on CPU, where test_backbones.py checks LoRA; xFormers has no CPU kernel). The flag is read when
+    the dinov2 layers are first imported, so it is set here and not at module level: the self-supervised trainer
+    (ssl_dinov2.py, which needs xFormers for nested tensors) never calls this function."""
+    import dinov2_hub_guard  # noqa: F401  (fails loudly if dinov2 layers were already imported with xFormers on)
     model = torch.hub.load("facebookresearch/dinov2", name, drop_path_rate=drop_path)
+    import dinov2.layers.attention as _att
+    assert not _att.XFORMERS_AVAILABLE, "DINOv2 loaded with xFormers attention; expected torch SDPA"
     model.feat_dim = model.embed_dim
     model.load_report = {"source": f"torch.hub facebookresearch/dinov2 {name}"}
     return model

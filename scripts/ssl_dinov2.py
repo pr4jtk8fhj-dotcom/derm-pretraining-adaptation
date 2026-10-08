@@ -80,6 +80,21 @@ def main():
     L.make_dataset = make_dataset
     T.make_dataset = make_dataset  # train.py imported the name directly
 
+    # Compatibility with torch >= 2.1 (pod: torch 2.8), applied at run time; the DINOv2 files stay unmodified.
+    # SSLMetaArch.fsdp_synchronize_streams shares FSDP's private `_streams` attribute between student and teacher,
+    # an attribute that newer FSDP no longer has (AttributeError on the first step). We keep the full device
+    # synchronization and skip the attribute sharing, the usual workaround for this error.
+    import dinov2.train.ssl_meta_arch as SMA
+
+    def fsdp_synchronize_streams(self):
+        if self.need_to_synchronize_fsdp_streams:
+            torch.cuda.synchronize()
+            self.need_to_synchronize_fsdp_streams = False
+
+    SMA.SSLMetaArch.fsdp_synchronize_streams = fsdp_synchronize_streams
+    print("[ssl] runtime patch: SSLMetaArch.fsdp_synchronize_streams without FSDP._streams (torch "
+          f"{torch.__version__}); DINOv2 repository files unmodified")
+
     args = T.get_args_parser(add_help=True).parse_args(rest)
     os.makedirs(args.output_dir, exist_ok=True)
     rank0 = int(os.environ.get("RANK", "0")) == 0

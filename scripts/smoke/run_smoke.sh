@@ -78,6 +78,7 @@ step ssl_dinov2     timeout 15m torchrun --nproc_per_node 1 scripts/ssl_dinov2.p
                     train.batch_size_per_gpu=16 train.OFFICIAL_EPOCH_LENGTH=10 optim.epochs=2 optim.warmup_epochs=1 \
                     train.num_workers=4 evaluation.eval_period_iterations=10
 kill $SMI 2>/dev/null
+step ssl_init_check $P scripts/ssl_check_init.py --run $SM/ssl_run
 step ssl_summarize  $P scripts/ssl_summarize.py --run $SM/ssl_run --batch-per-gpu 16 --gpus 1 --skip 2 --gpu-log $SM/ssl_gpu.csv
 
 # ---- Phase B evaluation path: continued-pretrained encoder -> same protocol -> primary contrast

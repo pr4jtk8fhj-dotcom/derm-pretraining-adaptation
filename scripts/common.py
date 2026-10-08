@@ -135,7 +135,7 @@ class GpuSampler(threading.Thread):
         super().__init__(daemon=True)
         self.period, self.index = period, index
         self.util, self.mem = [], []
-        self._stop = threading.Event()
+        self._stop_evt = threading.Event()
         self.ok = True
         try:
             import pynvml
@@ -147,7 +147,7 @@ class GpuSampler(threading.Thread):
             self.ok = False
 
     def run(self):
-        while self.ok and not self._stop.is_set():
+        while self.ok and not self._stop_evt.is_set():
             u = self.nvml.nvmlDeviceGetUtilizationRates(self.handle)
             m = self.nvml.nvmlDeviceGetMemoryInfo(self.handle)
             self.util.append(u.gpu)
@@ -155,7 +155,7 @@ class GpuSampler(threading.Thread):
             time.sleep(self.period)
 
     def stop(self):
-        self._stop.set()
+        self._stop_evt.set()
 
     def summary(self, skip_first_s=0.0):
         if not self.util:
