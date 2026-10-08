@@ -15,6 +15,8 @@
     "target_sensitivity": 0.95,
     "val_criterion_auroc": 0.85
   },
+  "lr_grid_extension": {"_note": "Added 2026-10-08 after the first sweep: every arm's best LR was at the edge of its 3-value grid; user decision: extend each arm by ONE step past that edge (4 values per arm), same val-only rule; if the new value wins again at the edge, keep it and report it as a limitation.",
+    "panderm_lora": [1e-4], "dinov2_lora": [1e-4], "panderm_full": [1e-3], "dinov2_full": [5e-5]},
   "full": {"lr": 2e-4, "layer_decay": 0.75, "lr_grid": [1e-4, 2e-4, 5e-4]},
   "lora": {"lr": 1e-3, "layer_decay": null, "alpha_over_rank": 2.0, "targets": ["qkv", "proj"],
            "lr_grid": [3e-4, 1e-3, 3e-3]}

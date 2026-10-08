@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LR sweep: same grid size (3 values) for every (backbone, method); train fraction 0.3, seed 1, VALIDATION ONLY.
+# LR sweep: same grid size for every (backbone, method) (3 values, +1 per arm from lr_grid_extension); train fraction 0.3, seed 1, VALIDATION ONLY.
 # Then: python scripts/select_lr.py --sweep $WS/runs/sweep
 # Two GPUs: run "bash scripts/lr_sweep.sh 0 2" and "bash scripts/lr_sweep.sh 1 2" in two tmux windows.
 set -uo pipefail
@@ -15,8 +15,12 @@ export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$SHARD}
 i=0
 for BB in $BBS; do
   for M in lora full; do
-    for LR in $(python -c "import json;print(' '.join(map(str,json.load(open('configs/hparams.json'))['$M']['lr_grid'])))"); do
+    # grid = lr_grid of the method + lr_grid_extension of this (backbone, method), if any (one step past an edge)
+    for LR in $(python -c "import json;c=json.load(open('configs/hparams.json'));print(' '.join(map(str,c['$M']['lr_grid']+c.get('lr_grid_extension',{}).get('${BB}_$M',[]))))"); do
       if [ $((i % NSHARDS)) -eq "$SHARD" ]; then
+        if python -c "import glob,json,sys;sys.exit(0 if any(json.load(open(f))['backbone']=='$BB' and json.load(open(f))['method'].startswith('$M') and abs(json.load(open(f))['lr']-$LR)<1e-12 for f in glob.glob('$WS/runs/sweep/*/results.json')) else 1)"; then
+          echo "== skip $BB $M lr=$LR (results.json present)"; i=$((i + 1)); continue
+        fi
         echo "== $(date -u +%FT%TZ) sweep $BB $M lr=$LR (gpu $CUDA_VISIBLE_DEVICES)"
         python scripts/train.py --backbone $BB --method $M --train-frac 0.3 --lr $LR --seed 1 \
           --manifest "$MANIFEST" --images "$IMAGES" --out "$WS/runs/sweep" --no-test --no-save $EXTRA \

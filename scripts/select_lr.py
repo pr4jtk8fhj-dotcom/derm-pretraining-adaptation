@@ -32,11 +32,16 @@ def main():
     sel = dict(prev.get("selected_lr", {}))
     for bb in a.backbones:
         for m in ["lora", "full"]:
-            key, grid = f"{bb}_{m}", cfg[m]["lr_grid"]
+            key = f"{bb}_{m}"
+            grid = cfg[m]["lr_grid"] + cfg.get("lr_grid_extension", {}).get(key, [])
             got = table.get(key, {})
+            if key in table and len({len(cfg[mm]["lr_grid"]) + len(cfg.get("lr_grid_extension", {}).get(f"{bb}_{mm}", []))
+                                     for mm in ["lora", "full"]}) != 1:
+                sys.exit("grid sizes differ between methods: every arm must try the same number of LR values")
             missing = [lr for lr in grid if not any(abs(lr - g) < 1e-12 for g in got)]
             if missing:
                 sys.exit(f"{key}: missing sweep runs for lr {missing}; found {got}")
+            got = {lr: v for lr, v in got.items() if any(abs(lr - g) < 1e-12 for g in grid)}
             best = max(got.items(), key=lambda kv: (kv[1], -kv[0]))
             if key in sel and sel[key] != best[0]:
                 sys.exit(f"{key} already fixed at {sel[key]} in {path}: not overwriting a frozen choice")
