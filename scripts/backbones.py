@@ -19,8 +19,8 @@ import torch.nn.functional as F
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-# Normalization per backbone. PanDerm: VERIFY against its classification code before the matrix
-# (grep -rn "mean" PanDerm/classification) and update here if it differs.
+# Normalization per backbone. PanDerm: verified 8 Oct 2026 - its scripts pass --imagenet_default_mean_and_std
+# (furnace/datasets.py -> timm IMAGENET_DEFAULT_MEAN/STD), i.e. the values below.
 NORM = {"panderm": (IMAGENET_MEAN, IMAGENET_STD), "dinov2": (IMAGENET_MEAN, IMAGENET_STD),
         "dinov2_cpt": (IMAGENET_MEAN, IMAGENET_STD)}
 BACKBONES = ("panderm", "dinov2", "dinov2_cpt")
@@ -112,22 +112,30 @@ def _resize_rel_pos_table(tab, n_new):
     return torch.cat([t[0].permute(1, 2, 0).reshape(s_new * s_new, -1).to(tab.dtype), tab[-extra:]], 0)
 
 
-def build_panderm(repo, ckpt, drop_path=0.0, img_size=224, allow_missing=r"^(head|fc_norm)\.", verbose=True):
-    """PanDerm_Large_FT with num_classes=0 (head = Identity): forward(x) returns pooled features.
-    img_size != 224: position embeddings and relative-position tables are interpolated from the 224 checkpoint."""
+# Constructor arguments of run_class_finetuning.py for --model PanDerm_Large_FT with its defaults
+# (PanDerm commit in logs/panderm_commit.txt): rel_pos_bias=True, use_mean_pooling=True, lin_probe=False,
+# layer_scale_init_value=0.1 (gammas are then overwritten by the checkpoint), init_scale=0.001, drop=attn_drop=0.
+PANDERM_FT_KW = dict(pretrained=False, drop_rate=0.0, attn_drop_rate=0.0, drop_block_rate=None, use_mean_pooling=True,
+                     init_scale=0.001, use_rel_pos_bias=True, init_values=0.1, lin_probe=False)
+
+
+def build_panderm(repo, ckpt, drop_path=0.0, img_size=224,
+                  allow_missing=r"^(head\.|blocks\.\d+\.attn\.relative_position_bias_table$)", verbose=True):
+    """PanDerm ViT-L/16 built and loaded exactly as run_class_finetuning.py does for PanDerm_Large_FT:
+    panderm_large_patch16_224_finetune(...) (mean pooling + fc_norm), checkpoint keys 'encoder.*' with the prefix
+    stripped, every other key (decoder, regresser, mask_token, rd_pos_embed) dropped, 'norm.*' renamed 'fc_norm.*'.
+    The released checkpoint has no relative-position tables: like the original script, they start at zero
+    (missing keys, allowed) and are trained in full fine-tuning (frozen at zero with LoRA / frozen features).
+    The head is replaced by Identity: forward(x) returns the pooled 1024-d features.
+    pos_embed is a fixed 2-D sin-cos table built by the model for its own grid; the checkpoint copy is identical
+    at 224 (checked below), so at img_size != 224 the model's own sin-cos table is used (no interpolation)."""
     mf = _import_panderm(repo)
-    ctor = getattr(mf, "PanDerm_Large_FT")
-    kw = dict(pretrained=False, drop_path_rate=drop_path)
+    ctor = getattr(mf, "panderm_large_patch16_224_finetune")
+    kw = dict(PANDERM_FT_KW, drop_path_rate=drop_path)
     if img_size != 224:
         kw["img_size"] = img_size
-    try:
-        model = ctor(num_classes=0, **kw)
-    except Exception as e:  # some ViT variants do not accept num_classes=0
-        print(f"[PanDerm] num_classes=0 failed ({e}); building with 2 classes and replacing head with Identity")
-        model = ctor(num_classes=2, **kw)
-        model.head = nn.Identity()
-    if not isinstance(model.head, nn.Identity):
-        raise RuntimeError(f"[PanDerm] expected an Identity head, got {model.head}")
+    model = ctor(num_classes=2, **kw)  # num_classes=0 breaks the constructor (trunc_normal_ on Identity.weight)
+    model.head = nn.Identity()
     raw = load_checkpoint_file(ckpt)
     sd = raw
     for k in ("model", "module", "state_dict"):
@@ -136,55 +144,59 @@ def build_panderm(repo, ckpt, drop_path=0.0, img_size=224, allow_missing=r"^(hea
             if verbose:
                 print(f"[PanDerm] using checkpoint['{k}']")
             break
-    if isinstance(raw, dict) and verbose:
-        print(f"[PanDerm] top-level checkpoint keys: {list(raw.keys())[:20]}")
     sd = {k[len("module."):] if k.startswith("module.") else k: v for k, v in sd.items()}
-    if sum(k.startswith("encoder.") for k in sd) > len(sd) / 2:
-        print("[PanDerm] keeping only 'encoder.*' keys and stripping the prefix")
-        sd = {k[len("encoder."):]: v for k, v in sd.items() if k.startswith("encoder.")}
-    sd = {k: v for k, v in sd.items() if not k.startswith("head.")}
+    enc = {k[len("encoder."):]: v for k, v in sd.items() if k.startswith("encoder.")}
+    if not enc:
+        raise RuntimeError(f"[PanDerm] no 'encoder.*' keys in {ckpt}; keys: {list(sd)[:20]}")
+    dropped = sorted({k.split(".")[0] for k in sd if not k.startswith("encoder.")})
+    print(f"[PanDerm] {len(enc)} encoder tensors; dropped non-encoder keys (prefixes): {dropped}")
+    sd = {("fc_norm." + k[len("norm."):] if k.startswith("norm.") else k): v for k, v in enc.items()}
+    sd = {k: v for k, v in sd.items() if not k.startswith("head.") and "relative_position_index" not in k}
 
     msd = model.state_dict()
-    # shared relative position bias in the checkpoint -> per-block tables in the model (BEiT convention)
     shared = "rel_pos_bias.relative_position_bias_table"
-    if shared in sd and shared not in msd:
+    if shared in sd and shared not in msd:  # not present in the released checkpoint; kept for other checkpoints
         for i in range(len(model.blocks)):
-            k = f"blocks.{i}.attn.relative_position_bias_table"
-            if k in msd:
-                sd[k] = sd[shared].clone()
+            sd[f"blocks.{i}.attn.relative_position_bias_table"] = sd[shared].clone()
         sd.pop(shared)
         print("[PanDerm] copied shared rel_pos_bias table into every block")
     resized = []
+    if "pos_embed" in sd:
+        if sd["pos_embed"].shape == msd["pos_embed"].shape:
+            d = float((sd["pos_embed"].float() - msd["pos_embed"].float()).abs().max())
+            print(f"[PanDerm] checkpoint pos_embed vs model sin-cos table: max |diff| = {d}")
+        else:
+            ref = mf.panderm_large_patch16_224_finetune(num_classes=2, **dict(PANDERM_FT_KW, drop_path_rate=0.0))
+            d = float((sd["pos_embed"].float() - ref.pos_embed.float()).abs().max())
+            if d > 1e-6:
+                raise RuntimeError(f"[PanDerm] checkpoint pos_embed is not the 224 sin-cos table (max diff {d}): "
+                                   "cannot use the model's own table at another resolution")
+            del ref
+            sd.pop("pos_embed")
+            resized.append("pos_embed (model's own sin-cos table for the new grid; checkpoint table = 224 sin-cos)")
     for k in list(sd):
-        if k in msd and sd[k].shape != msd[k].shape:
-            if k == "pos_embed":
-                sd[k] = _resize_pos_embed(sd[k], msd[k].shape[1] - 1)
-            elif k.endswith("relative_position_bias_table"):
-                sd[k] = _resize_rel_pos_table(sd[k], msd[k].shape[0])
-            elif k.endswith("relative_position_index"):  # buffer rebuilt by the model for the new grid
-                del sd[k]
-                continue
-            else:
-                continue
+        if k.endswith("relative_position_bias_table") and k in msd and sd[k].shape != msd[k].shape:
+            sd[k] = _resize_rel_pos_table(sd[k], msd[k].shape[0])
             resized.append(k)
     if resized:
-        print(f"[PanDerm] interpolated to img_size={img_size}: {len(resized)} tensors "
-              f"({sorted(set(r.split('.')[-1] for r in resized))})")
+        print(f"[PanDerm] img_size={img_size}: {resized[:3]}{' ...' if len(resized) > 3 else ''}")
     shape_mismatch = [k for k in sd if k in msd and sd[k].shape != msd[k].shape]
     if shape_mismatch:
         raise RuntimeError(f"[PanDerm] shape mismatch: "
                            f"{[(k, tuple(sd[k].shape), tuple(msd[k].shape)) for k in shape_mismatch]}")
 
     res = model.load_state_dict(sd, strict=False)
-    missing = [k for k in res.missing_keys if not k.endswith("relative_position_index")]
-    print(f"[PanDerm] missing keys ({len(missing)}): {missing}")
+    missing = [k for k in res.missing_keys if not k.endswith("relative_position_index")
+               and not (k == "pos_embed" and resized)]  # dropped on purpose above: model's own sin-cos table
+    print(f"[PanDerm] missing keys ({len(missing)}): {missing[:4]}{' ...' if len(missing) > 4 else ''}")
     print(f"[PanDerm] unexpected keys ({len(res.unexpected_keys)}): {res.unexpected_keys}")
     bad = [k for k in missing if not re.match(allow_missing, k)]
-    if bad:
-        raise RuntimeError(f"[PanDerm] missing keys outside the allow-list {allow_missing!r}: {bad}")
+    if bad or res.unexpected_keys:
+        raise RuntimeError(f"[PanDerm] missing keys outside {allow_missing!r}: {bad}; unexpected: {res.unexpected_keys}")
     model.load_report = {"missing": missing, "unexpected": list(res.unexpected_keys), "img_size": img_size,
-                         "interpolated": resized}
-    model.feat_dim = getattr(model, "num_features", None) or model.embed_dim
+                         "interpolated": resized, "dropped_prefixes": dropped,
+                         "renamed": "norm.* -> fc_norm.* (as run_class_finetuning.py)"}
+    model.feat_dim = model.embed_dim
     return model
 
 

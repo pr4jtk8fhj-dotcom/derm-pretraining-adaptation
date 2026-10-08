@@ -83,6 +83,12 @@ def check_sdpa(ckpt, res):
     for dev, dtype in [("cpu", torch.float32)] + ([("cuda", torch.bfloat16)] if torch.cuda.is_available() else []):
         torch.manual_seed(0)
         ref = build_backbone("panderm", panderm_repo=PANDERM_REPO, panderm_ckpt=ckpt).to(dev).train()
+        # the released checkpoint has no relative-position tables (zero init): fill them with random values so
+        # that the additive-bias path of the fused attention is actually exercised by this comparison
+        with torch.no_grad():
+            for blk in ref.blocks:
+                if getattr(blk.attn, "relative_position_bias_table", None) is not None:
+                    blk.attn.relative_position_bias_table.normal_(0, 0.5)
         new = copy.deepcopy(ref)
         patch_panderm_sdpa(new)
         for mm in (ref, new):  # deterministic comparison: no dropout / drop path
