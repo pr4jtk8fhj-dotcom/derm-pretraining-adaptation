@@ -19,8 +19,8 @@ from common import run_record, write_json  # noqa: E402
 from dedup_audit import MAX_HAMMING, dhash, hamming  # noqa: E402
 
 
-def hashes(paths):
-    with ProcessPoolExecutor(os.cpu_count()) as ex:
+def hashes(paths, workers=None):
+    with ProcessPoolExecutor(workers or os.cpu_count()) as ex:
         return np.stack(list(ex.map(dhash, paths, chunksize=64)))
 
 
@@ -33,6 +33,7 @@ def main():
     ap.add_argument("--splits", nargs="+", default=["val", "test"])
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-hamming", type=int, default=MAX_HAMMING)
+    ap.add_argument("--workers", type=int, default=None, help="dHash processes (default: all CPUs)")
     a = ap.parse_args()
     ids = pd.read_csv(a.ssl_ids, dtype=str)
     dl = pd.read_csv(os.path.join(a.ssl_images, "downloads.csv"), dtype=str).drop_duplicates("image_id", keep="last")
@@ -43,8 +44,8 @@ def main():
     h = h.merge(hdl[["image_id", "sha256"]], on="image_id", how="left")
 
     exact = set(s.image_id[s.sha256.isin(set(h.sha256.dropna()))])
-    hs = hashes([os.path.join(a.ssl_images, f) for f in s.file])
-    hh = hashes([os.path.join(a.held_images, f) for f in h.file])
+    hs = hashes([os.path.join(a.ssl_images, f) for f in s.file], a.workers)
+    hh = hashes([os.path.join(a.held_images, f) for f in h.file], a.workers)
     near = set()
     for i in range(0, len(hs), 128):
         d = hamming(hs[i:i + 128], hh)
