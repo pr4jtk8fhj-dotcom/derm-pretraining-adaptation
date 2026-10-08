@@ -3,7 +3,7 @@
 
     python scripts/ssl_dedup_vs_test.py --ssl-ids $WS/data/ssl/ssl_smoke.csv --ssl-images $WS/data/ssl_images_256 \
         --manifest $WS/data/partition/manifest.csv --held-images $WS/data/images_256 --out $WS/data/ssl/exclude_smoke.csv
-Exact = same SHA-256 of the original file; near = dHash distance <= --max-hamming (same rule as dedup_audit.py).
+Exact = same SHA-256 of the original file; near = 256-bit dHash distance <= --max-hamming (same rule as dedup_audit.py).
 Writes the image_ids to exclude (pass to `ssl_build_set.py list --exclude`) and a summary JSON.
 """
 import argparse
@@ -16,12 +16,12 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import run_record, write_json  # noqa: E402
-from dedup_audit import dhash, popcount64  # noqa: E402
+from dedup_audit import MAX_HAMMING, dhash, hamming  # noqa: E402
 
 
 def hashes(paths):
     with ProcessPoolExecutor(os.cpu_count()) as ex:
-        return np.array(list(ex.map(dhash, paths, chunksize=64)), dtype=np.uint64)
+        return np.stack(list(ex.map(dhash, paths, chunksize=64)))
 
 
 def main():
@@ -32,7 +32,7 @@ def main():
     ap.add_argument("--held-images", required=True, help="image dir (with downloads.csv) of the labelled images")
     ap.add_argument("--splits", nargs="+", default=["val", "test"])
     ap.add_argument("--out", required=True)
-    ap.add_argument("--max-hamming", type=int, default=6)
+    ap.add_argument("--max-hamming", type=int, default=MAX_HAMMING)
     a = ap.parse_args()
     ids = pd.read_csv(a.ssl_ids, dtype=str)
     dl = pd.read_csv(os.path.join(a.ssl_images, "downloads.csv"), dtype=str).drop_duplicates("image_id", keep="last")
@@ -47,7 +47,7 @@ def main():
     hh = hashes([os.path.join(a.held_images, f) for f in h.file])
     near = set()
     for i in range(0, len(hs), 128):
-        d = popcount64(hs[i:i + 128, None] ^ hh[None, :])
+        d = hamming(hs[i:i + 128], hh)
         rows = np.nonzero((d <= a.max_hamming).any(1))[0]
         near.update(s.image_id[i + rows])
     ex = sorted(exact | near)

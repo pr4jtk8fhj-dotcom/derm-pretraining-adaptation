@@ -91,6 +91,8 @@ def main():
     les_src = defaultdict(set)
     for r in rows:
         l = g(r, "lesion_id")
+        if not l:  # missing lesion id: not a lesion
+            continue
         les_label[l].add(g(r, "label"))
         les_src[l].add(g(r, "label_source"))
     conflicts = sum(1 for s in les_label.values() if len(s - {""}) > 1)
@@ -112,7 +114,8 @@ def main():
     # --- coerenza tra paziente e lesione
     les_pat = defaultdict(set)
     for r in rows:
-        les_pat[g(r, "lesion_id")].add(g(r, "patient_id"))
+        if g(r, "lesion_id") and g(r, "patient_id"):  # empty ids are missing values, not one shared id
+            les_pat[g(r, "lesion_id")].add(g(r, "patient_id"))
     multi = sum(1 for s in les_pat.values() if len(s) > 1)
     if multi:
         p(f"ERRORE: {multi} lesioni associate a piu' di un paziente")
@@ -129,8 +132,10 @@ def main():
         for r in rows:
             s = g(r, "split")
             if s:
-                pat_split[g(r, "patient_id")].add(s)
-                les_split[g(r, "lesion_id")].add(s)
+                if g(r, "patient_id"):
+                    pat_split[g(r, "patient_id")].add(s)
+                if g(r, "lesion_id"):
+                    les_split[g(r, "lesion_id")].add(s)
         leak_p = sum(1 for s in pat_split.values() if len(s) > 1)
         leak_l = sum(1 for s in les_split.values() if len(s) > 1)
         p(f"Divisione: {dict(Counter(g(r, 'split') or '(vuota)' for r in rows))} immagini")

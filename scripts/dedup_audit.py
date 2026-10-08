@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Duplicate audit: exact (SHA-256 of file) + perceptual (64-bit dHash), within AND across sources.
+"""Duplicate audit: exact (SHA-256 of file) + perceptual (256-bit dHash, 16x16), within AND across sources.
+
+Threshold: Hamming distance <= 10 of 256 bits (user decision 8 Oct 2026, rule c). The pre-specified 64-bit dHash
+<= 6 was replaced after the audit on real data: 847,995 pairs, 99.7% with different lesion_id, visually different
+lesions (dermoscopic images share vignetting and a central lesion), 36% of the cohort excluded by chaining.
+With 256 bits, visual check of random pairs: distance 6-10 = 24/24 same image; 11-15 mixed; 16-20 different
+lesions. The threshold is conservative: some cropped copies (11-15) may be missed (declare it).
 
     python scripts/dedup_audit.py --cohort /workspace/data/cohort/cohort.csv \
         --images /workspace/data/images --out /workspace/data/dedup [--max-hamming 6]
@@ -26,17 +32,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import run_record, write_json  # noqa: E402
 
 
-def dhash(path, size=8):
+HASH_SIZE, MAX_HAMMING = 16, 10
+_POPCNT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
+
+
+def dhash(path, size=HASH_SIZE):
+    """Difference hash, size x size bits, packed into size*size/8 uint8."""
     with Image.open(path) as im:
-        im.draft("L", (64, 64))  # JPEG DCT-domain downscale: much faster on large images
+        im.draft("L", (4 * size, 4 * size))  # JPEG DCT-domain downscale: much faster on large images
         im = im.convert("L").resize((size + 1, size), Image.LANCZOS)
     px = np.asarray(im, dtype=np.int16)
-    bits = (px[:, 1:] > px[:, :-1]).flatten()
-    return int(np.packbits(bits).view(">u8")[0])
+    return np.packbits((px[:, 1:] > px[:, :-1]).flatten())
 
 
-def popcount64(x):
-    return np.unpackbits(x.view(np.uint8).reshape(*x.shape, 8), axis=-1).sum(-1)
+def hamming(a, b):
+    """a: (k, B) uint8, b: (n, B) uint8 packed hashes -> (k, n) Hamming distances."""
+    return _POPCNT[a[:, None, :] ^ b[None, :, :]].sum(-1, dtype=np.int32)
 
 
 class UF:
@@ -58,7 +69,8 @@ def main():
     ap.add_argument("--cohort", required=True)
     ap.add_argument("--images", required=True, help="dir with downloads.csv and the image files")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--max-hamming", type=int, default=6)
+    ap.add_argument("--max-hamming", type=int, default=MAX_HAMMING)
+    ap.add_argument("--hash-size", type=int, default=HASH_SIZE)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
@@ -69,21 +81,21 @@ def main():
 
     from concurrent.futures import ProcessPoolExecutor
     with ProcessPoolExecutor(os.cpu_count()) as ex:
-        hl = list(ex.map(dhash, [os.path.join(a.images, f) for f in d.file], chunksize=64))
-    hashes = np.array(hl, dtype=np.uint64)
-    print(f"dHash computed for {len(hashes)} images")
-    d["dhash"] = [f"{int(h):016x}" for h in hashes]
+        from functools import partial
+        hl = list(ex.map(partial(dhash, size=a.hash_size), [os.path.join(a.images, f) for f in d.file], chunksize=64))
+    hashes = np.stack(hl)
+    print(f"dHash ({a.hash_size}x{a.hash_size} bits) computed for {len(hashes)} images")
+    d["dhash"] = [h.tobytes().hex() for h in hashes]
 
-    pairs, min_dist = [], np.full(len(d), 64)
-    B = 128  # 128 x N x 64 bytes after unpackbits (~320 MB at N = 40k)
+    pairs, min_dist = [], np.full(len(d), a.hash_size ** 2)
+    B = 128  # 128 x N x 32 bytes (~160 MB at N = 40k)
     for s in range(0, len(d), B):
-        x = hashes[s:s + B, None] ^ hashes[None, :]
-        dist = popcount64(x).astype(np.int64)
+        dist = hamming(hashes[s:s + B], hashes).astype(np.int64)
         for r in range(dist.shape[0]):
             i = s + r
-            dist[r, i] = 99
+            dist[r, i] = 9999
             min_dist[i] = dist[r].min()  # nearest other image, any index
-            dist[r, : i + 1] = 99  # each pair once (j > i)
+            dist[r, : i + 1] = 9999  # each pair once (j > i)
             row = dist[r]
             for j in np.nonzero(row <= a.max_hamming)[0]:
                 pairs.append((i, int(j), int(row[j])))
@@ -133,7 +145,7 @@ def main():
         os.path.join(a.out, "dedup_decisions.csv"), index=False)
 
     summary = {
-        "n_images": len(d), "max_hamming": a.max_hamming,
+        "n_images": len(d), "max_hamming": a.max_hamming, "hash_bits": a.hash_size ** 2,
         "pairs_total": len(pr), "pairs_exact_sha256": int(pr.exact_sha256.sum()) if len(pr) else 0,
         "pairs_near_only": int((~pr.exact_sha256).sum()) if len(pr) else 0,
         "pairs_cross_source": int((pr.source_a != pr.source_b).sum()) if len(pr) else 0,
@@ -142,7 +154,7 @@ def main():
         "pairs_different_lesion_id": int((~pr.same_lesion).sum()) if len(pr) else 0,
         **stats, "actions": dict(Counter(action)),
         "actions_by_source": {s: dict(Counter(g.action)) for s, g in d.groupby("source")},
-        "min_hamming_histogram_0_12": {int(k): int(v) for k, v in zip(*np.unique(np.minimum(min_dist, 13), return_counts=True))},
+        "min_hamming_histogram_0_20": {int(k): int(v) for k, v in zip(*np.unique(np.minimum(min_dist, 21), return_counts=True))},
     }
     write_json(os.path.join(a.out, "dedup_summary.json"), summary)
     write_json(os.path.join(a.out, "dedup_run.json"), run_record(extra={"summary": summary}))
