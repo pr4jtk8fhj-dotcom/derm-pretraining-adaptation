@@ -18,6 +18,11 @@ ap.add_argument("--minutes", type=float, required=True)
 ap.add_argument("--factor", type=float, default=1.15)
 ap.add_argument("--label", default="")
 a = ap.parse_args()
+# A deadline changed by the user while a queue is running goes in logs/DEADLINE_OVERRIDE (one ISO timestamp);
+# it replaces --deadline, so running queue scripts need not be edited.
+ovr = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "DEADLINE_OVERRIDE")
+if os.path.exists(ovr):
+    a.deadline = open(ovr).read().strip()
 mins, src = a.minutes, "estimate"
 res = os.path.join(a.ref, "results.json")
 if a.ref and os.path.exists(res):
