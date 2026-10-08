@@ -36,7 +36,7 @@ FIELDS = {
     "patient_id": ["patient_id"],
     "age": ["age_approx"],
     "sex": ["sex"],
-    "body_site": ["anatom_site_general", "anatom_site_special", "anatom_site"],
+    "body_site": ["anatom_site_1", "anatom_site_general", "anatom_site_special", "anatom_site"],
 }
 REQUIRED = ["isic_id", "license", "attribution", "image_type", "diagnosis_1", "confirm"]
 LABELS = {"benign": "benign", "malignant": "malignant"}

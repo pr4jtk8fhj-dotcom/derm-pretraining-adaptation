@@ -57,6 +57,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--val-frac", type=float, default=0.15)
+    ap.add_argument("--test-require-patient-id", nargs="*", default=[],
+                    help="test sources whose images WITHOUT patient_id are excluded from every split (user decision "
+                         "8 Oct 2026: MSKCC; the >=90%% patient-coverage rule is then met by the retained subset)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     log = Counter()
@@ -72,6 +75,12 @@ def main():
     unverified = [s for s in a.test_sources if s not in verified]
     if unverified:
         sys.exit(f"test sources not verified in {a.source_map}: {unverified} (unresolved sources are development only)")
+    bad = set(a.test_require_patient_id) - set(a.test_sources)
+    if bad:
+        sys.exit(f"--test-require-patient-id must list test sources only: {bad}")
+    m = c.source.isin(a.test_require_patient_id) & (c.patient_id == "")
+    log["excluded_test_source_without_patient_id"] = int(m.sum())
+    c = c[~m].reset_index(drop=True)
     d = c.merge(dd[["image_id", "file", "sha256", "dup_cluster", "action"]], on="image_id", how="inner")
     log["not_downloaded"] = len(c) - len(d)
     m = d.action == "exclude_label_conflict"
@@ -138,7 +147,8 @@ def main():
     with open(os.path.join(a.out, "subsets_table.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(md) + "\n\n(Continued-pretraining pool: see data/ssl/ssl_set_summary.json)\n")
     counts = {**subsets, **{f"by_split_source/{k}": v for k, v in by_split_source.items()}}
-    summary = {"seed": a.seed, "val_frac": a.val_frac, "test_sources": a.test_sources, "log": dict(log),
+    summary = {"seed": a.seed, "val_frac": a.val_frac, "test_sources": a.test_sources,
+               "test_require_patient_id": a.test_require_patient_id, "log": dict(log),
                "group_basis_images": basis, "counts": counts,
                "patient_id_coverage_by_institution": {s: round(100 * (g.patient_id != "").mean(), 1)
                                                       for s, g in d.groupby("source")},

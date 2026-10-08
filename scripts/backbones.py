@@ -19,9 +19,11 @@ import torch.nn.functional as F
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-# Normalization per backbone. PanDerm: verified 8 Oct 2026 - its scripts pass --imagenet_default_mean_and_std
-# (furnace/datasets.py -> timm IMAGENET_DEFAULT_MEAN/STD), i.e. the values below.
-NORM = {"panderm": (IMAGENET_MEAN, IMAGENET_STD), "dinov2": (IMAGENET_MEAN, IMAGENET_STD),
+# Normalization per backbone. PanDerm: as hard-coded in its fine-tuning script run_class_finetuning.py
+# (mean 0.485/0.456/0.406, std 0.228/0.224/0.225; checked 8 Oct 2026 on the commit in logs/panderm_commit.txt).
+# DINOv2: ImageNet mean/std (its hub transforms).
+PANDERM_STD = (0.228, 0.224, 0.225)
+NORM = {"panderm": (IMAGENET_MEAN, PANDERM_STD), "dinov2": (IMAGENET_MEAN, IMAGENET_STD),
         "dinov2_cpt": (IMAGENET_MEAN, IMAGENET_STD)}
 BACKBONES = ("panderm", "dinov2", "dinov2_cpt")
 
