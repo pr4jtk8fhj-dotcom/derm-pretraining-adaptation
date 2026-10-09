@@ -30,7 +30,7 @@ KEYS = ["auroc", "sensitivity", "specificity", "flag_rate", "false_negatives"]
 PRIMARY = {"treated": "dinov2_cpt", "reference": "dinov2", "method": "full", "img": 224, "frac": 1.0, "metric": "auroc"}
 
 
-def load_runs(frozen_dir, matrix_dir):
+def load_runs(frozen_dir, matrix_dirs):
     runs = []
     for f in glob.glob(os.path.join(frozen_dir, "*", "results.json")):
         r = json.load(open(f))
@@ -41,7 +41,7 @@ def load_runs(frozen_dir, matrix_dir):
                          "pred": p, "gpu_hours": r["run"]["gpu_hours"] / len(r["results"]),
                          "img_per_s": r["run"]["extract_img_per_s"], "peak_mem_gb": r["run"].get("extract_peak_mem_gb"),
                          "gpu_idle_pct": r["run"]["gpu_extract"]["gpu_idle_pct"], "time_to_crit_s": None})
-    for f in glob.glob(os.path.join(matrix_dir, "*", "results.json")):
+    for f in sorted(f for d in matrix_dirs for f in glob.glob(os.path.join(d, "*", "results.json"))):
         r = json.load(open(f))
         if "metrics" not in r:
             continue
@@ -59,7 +59,7 @@ def load_runs(frozen_dir, matrix_dir):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--frozen", required=True)
-    ap.add_argument("--matrix", required=True)
+    ap.add_argument("--matrix", required=True, nargs="+", help="one or more run dirs (e.g. runs/matrix runs/matrix448)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--target-sens", type=float, default=0.95)
     ap.add_argument("--n-boot", type=int, default=1000)
@@ -113,15 +113,17 @@ def main():
                 comps.append((f"cpt_minus_dinov2_{meth}", r, idx[("dinov2_cpt", meth, frac, img, seed)]))
             if ("panderm", meth, frac, img, seed) in idx:
                 comps.append((f"panderm_minus_dinov2_{meth}", r, idx[("panderm", meth, frac, img, seed)]))
+        if img != 224 and (bb, meth, frac, 224, seed) in idx:
+            comps.append((f"img{img}_minus_img224_{meth}", idx[(bb, meth, frac, 224, seed)], r))
         for name, r1, r2 in comps:
             t1, t2 = r1["te"], r2["te"]
             assert (t1.image_id.values == t2.image_id.values).all(), "different test images"
             d = paired_bootstrap(t1.y.values, t1.score.values, r1["thr"], t2.score.values, r2["thr"],
                                  t1.group_id.values, a.n_boot, a.seed)
             for k, v in d.items():
-                pairs.append({"comparison": name, "img": img, "frac": frac, "seed": seed, "metric": k,
+                pairs.append({"comparison": name, "backbone": bb, "img": img, "frac": frac, "seed": seed, "metric": k,
                               "diff": v["diff"], "ci_lo": v["ci95"][0], "ci_hi": v["ci95"][1]})
-    P = pd.DataFrame(pairs, columns=["comparison", "img", "frac", "seed", "metric", "diff", "ci_lo", "ci_hi"])
+    P = pd.DataFrame(pairs, columns=["comparison", "backbone", "img", "frac", "seed", "metric", "diff", "ci_lo", "ci_hi"])
     P.to_csv(os.path.join(a.out, "paired.csv"), index=False)
 
     f3 = lambda x: "" if x is None or pd.isna(x) else f"{x:.3f}"
