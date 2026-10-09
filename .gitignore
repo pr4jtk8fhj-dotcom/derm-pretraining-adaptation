@@ -25,3 +25,7 @@ __pycache__/
 .pod_segments
 .pod_price
 logs/MATRIX_HOLD
+# Internal documents and packaged outputs
+GUIDA.md
+PROGRESS.md
+*.zip
