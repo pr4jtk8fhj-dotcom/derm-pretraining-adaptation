@@ -8,25 +8,24 @@ logs/
 *.npz
 *.safetensors
 *.nsys-rep
-.pod_start_utc
-PROGRESS.md
+*.zip
 
-# Personal / application documents (not code)
+# Local working documents (the published proposal is docs/DermaLensAI_proposal.pdf)
 archivio/
 proposta/
 GUIDA.md
-*.pdf
+PROGRESS.md
+CLAUDE.md
 *.xlsx
+*.pdf
+!docs/*.pdf
+
+# Pod state files
+.pod_start_utc
+.pod_segments
+.pod_price
 
 # Python
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-.pod_segments
-.pod_price
-logs/MATRIX_HOLD
-# Internal documents and packaged outputs
-GUIDA.md
-PROGRESS.md
-*.zip
-CLAUDE.md

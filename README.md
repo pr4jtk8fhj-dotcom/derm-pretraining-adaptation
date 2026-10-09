@@ -14,17 +14,21 @@ images, evaluated on institutions excluded from model development.
 Every reported number comes from logged runs (command, commit, seed, hardware, versions, manifest hash).
 Not a medical device; no clinical validation is claimed. No hospital data is used.
 
-- Commands, in order: `scripts/README.md` (Italian). End-to-end test on synthetic data: `scripts/smoke/run_smoke.sh`.
+- Commands, in order: `scripts/README.md`. End-to-end test on synthetic data: `scripts/smoke/run_smoke.sh`.
 - Licences: our code is Apache-2.0 (`LICENSE`, `NOTICE`). Third-party code, weights and images are downloaded at run
   time and not redistributed: see `THIRD_PARTY.md`. Weights derived from PanDerm (CC-BY-NC-ND 4.0) are never published.
+- CINECA Open Hackathon 2026 proposal: `docs/DermaLensAI_proposal.pdf`.
+- Team: Gaia Arienti, Olimpia Cordeschi, Alessandra Fatone, Marco Tarchi and Gianluca Cividini (Politecnico di Milano,
+  Executive MBA), supervised by Alessio Ronchini.
 
 ## Preliminary results (phase A, 1x H100 on RunPod)
 
 **Hardware and scope.** All numbers below were measured on **one rented NVIDIA H100 80GB HBM3 SXM (RunPod, eu-fr-1)**,
 8-9 October 2026, with torch 2.8.0+cu128 and timm 0.9.16. They are **not** measurements on Leonardo (A100 64 GB). The task is a
 **diagnostic proxy** (benign vs malignant, histopathology-confirmed), not validated triage. Each run's `results.json` records
-the commit it was run with (`project_commit`). Five runs (the one-step LR-grid extension) carry `428d6b8-dirty` and one carries
-`2eae334-dirty`: the code was at that commit and the working tree had uncommitted changes.
+the commit it was run with (`project_commit`). Five runs carry `428d6b8-dirty` (the four LR-grid-extension trials and the
+PanDerm LoRA 100% seed-1 matrix run) and one benchmark run carries `2eae334-dirty`: the code was at that commit and the
+working tree had uncommitted changes.
 
 **Primary contrast** (`dinov2_cpt` − `dinov2`, full fine-tuning, 224 px, 100%): **not available** in phase A, because the continued-pretraining
 encoder is phase-B work. No primary result is claimed.
